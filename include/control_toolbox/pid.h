@@ -314,6 +314,9 @@ public:
    */
   double computeCommand(double error, double error_dot, ros::Duration dt);
 
+  /* Edited by Aytac Kahveci */
+  double computeCommand(double diff_error, double error_now, double error_dot, ros::Duration dt);
+
   /*!
    * \brief Update the Pid loop with nonuniform time step size.
    *

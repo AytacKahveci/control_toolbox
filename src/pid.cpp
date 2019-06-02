@@ -312,6 +312,73 @@ double Pid::computeCommand(double error, ros::Duration dt)
   return computeCommand(error, error_dot, dt);
 }
 
+/* Edited by Aytac Kahveci ******************************************************************/
+double Pid::computeCommand(double diff_error, double error_now, double error_dot, ros::Duration dt)
+{
+    // Get the gain parameters from the realtime buffer
+    Gains gains = *gains_buffer_.readFromRT();
+
+    double p_term, d_term, i_term;
+    p_error_ = diff_error; // diff_error = error_k(i) - error_k(i-1)
+    d_error_ = error_dot;
+
+    if(dt == ros::Duration(0.0) || std::isnan(d_error_) || std::isinf(d_error_) || std::isnan(error_now) || std::isinf(error_now) || std::isnan(error_dot) || std::isinf(error_dot))
+        return 0.0;
+
+    //Calculate proportional contribution to command
+    p_term  = gains.p_gain_ * p_error_;
+
+    //Calculate the integral of the position error
+    i_error_ += dt.toSec() * error_now;
+
+    if(gains.antiwindup_)
+    {
+      // Prevent i_error_ from climbing higher than permitted by i_max_/i_min_
+      i_error_ = boost::algorithm::clamp(i_error_,
+                                         gains.i_min_ / std::abs(gains.i_gain_),
+                                         gains.i_max_ / std::abs(gains.i_gain_));
+    }
+
+    //Calculate integral contribution to command
+    i_term = gains.i_gain_ * i_error_;
+
+    if(!gains.antiwindup_)
+    {
+      // Limit i_term so that the limit is meaningful in the output
+      i_term = boost::algorithm::clamp(i_term, gains.i_min_, gains.i_max_);
+    }
+
+    // Calculate derivative contribution to command
+    d_term = gains.d_gain_ * d_error_;
+
+    // Compute the command
+    cmd_ = p_term + i_term + d_term;
+
+    // Publish controller state if configured
+    if (publish_state_ && state_publisher_)
+    {
+      if (state_publisher_->trylock())
+      {
+        state_publisher_->msg_.header.stamp = ros::Time::now();
+        state_publisher_->msg_.timestep = dt;
+        state_publisher_->msg_.error = diff_error;
+        state_publisher_->msg_.error_dot = error_dot;
+        state_publisher_->msg_.p_error = p_error_;
+        state_publisher_->msg_.i_error = i_error_;
+        state_publisher_->msg_.d_error = d_error_;
+        state_publisher_->msg_.p_term = p_term;
+        state_publisher_->msg_.i_term = i_term;
+        state_publisher_->msg_.d_term = d_term;
+        state_publisher_->msg_.i_max = gains.i_max_;
+        state_publisher_->msg_.i_min = gains.i_min_;
+        state_publisher_->msg_.output = cmd_;
+        state_publisher_->unlockAndPublish();
+      }
+    }
+
+    return cmd_;
+}
+
 double Pid::updatePid(double error, ros::Duration dt)
 {
   return -computeCommand(error, dt);
